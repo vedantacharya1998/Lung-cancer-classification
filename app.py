@@ -1,46 +1,44 @@
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, jsonify
+import pickle
+import numpy as np
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.densenet import preprocess_input
 from tensorflow.keras.models import load_model
-import numpy as np
-import pickle
+import io
 
 app = Flask(__name__)
 
-# Load the trained Keras model
+import pickle
+
 with open('lung_cancer_model4.pkl', 'rb') as model_file:
     model = pickle.load(model_file)
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
+# Define a route for making predictions
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
-        # Check if the 'image' file is included in the request
-        if 'image' not in request.files:
-            return jsonify({'error': 'No image file provided.'}), 400
-
-        # Get the uploaded image from the request
         image_file = request.files['image']
+        if image_file:
+            # Convert FileStorage to io.BytesIO
+            image_data = image_file.read()
+            image_data = io.BytesIO(image_data)
+            
+            # Load and preprocess the image
+            img = image.load_img(image_data, target_size=(446, 446))
+            img = image.img_to_array(img)
+            img = np.expand_dims(img, axis=0)
+            img = preprocess_input(img)
 
-        # Load and preprocess the image
-        img = image.load_img(image_file, target_size=(446, 446))
-        img = image.img_to_array(img)
-        img = np.expand_dims(img, axis=0)
-        img = preprocess_input(img)
+            # Make a prediction
+            prediction = model.predict(img)
 
-        # Make a prediction using the loaded model
-        prediction = model.predict(img)
+            # Assuming binary classification
+            class_label = "Class 1" if prediction[0][0] < 0.5 else "Class 2"
 
-        # Assuming binary classification
-        class_label = "Class 1" if prediction[0][0] < 0.5 else "Class 2"
-
-        return jsonify({'prediction': class_label}), 200
-
+            return jsonify({'prediction': class_label})
+        else:
+            return jsonify({'error': 'No image file provided.'})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e)})
 
 if __name__ == '__main__':
     app.run(debug=True)
